@@ -15,7 +15,17 @@ class MyPlugin(Star):
         self.task = None  # 用于存储定时任务
         
         # 从配置获取参数，不再使用具体的默认值
-        self.target_group = self.config.get("target_group")
+        target_group_raw = self.config.get("target_group")
+        self.target_group = None
+        
+        # 验证target_group是否为有效数字
+        if target_group_raw is not None:
+            target_group_str = str(target_group_raw)
+            if target_group_str.isdigit():
+                self.target_group = target_group_str
+            else:
+                logger.error(f"配置中的 target_group '{target_group_raw}' 不是有效的数字，已忽略。")
+        
         self.server_name = self.config.get("server_name", "Minecraft服务器")
         self.server_ip = self.config.get("server_ip")
         self.server_port = self.config.get("server_port")
@@ -33,8 +43,6 @@ class MyPlugin(Star):
             logger.error("请在配置文件中设置以下参数: target_group, server_ip, server_port")
             self.enable_auto_monitor = False
         else:
-            # 确保 target_group 是字符串类型
-            self.target_group = str(self.target_group)
             logger.info(f"Minecraft监控插件已加载 - 目标群: {self.target_group}, 服务器: {self.server_ip}:{self.server_port}")
         
         # 如果启用了自动监控且配置完整，延迟启动任务
@@ -69,14 +77,41 @@ class MyPlugin(Star):
             logger.warning(f"获取一言时发生未知错误: {e}")
             return None
     
+    def _extract_player_names(self, player_sample):
+        """
+        从player_sample中提取玩家名称列表
+        
+        Args:
+            player_sample: API返回的玩家样本数据，可能是列表或其他类型
+            
+        Returns:
+            list: 玩家名称列表
+        """
+        if not isinstance(player_sample, list):
+            return []
+        
+        player_names = []
+        for player in player_sample:
+            if isinstance(player, dict):
+                name = player.get('name', '未知玩家')
+                if name:  # 确保名称不为空
+                    player_names.append(name)
+            elif player:  # 确保不是空字符串或None
+                player_names.append(str(player))
+        
+        return player_names
 
-    async def get_minecraft_server_info(self, format_message=True):
-        """获取Minecraft服务器信息"""
+    async def _fetch_server_data(self):
+        """
+        获取Minecraft服务器原始数据
+        
+        Returns:
+            dict: 包含服务器信息的字典，失败时返回None
+        """
         # 检查配置完整性
         if not self.server_ip or not self.server_port:
-            error_msg = "服务器IP或端口未配置"
-            logger.error(error_msg)
-            return f"❌ {error_msg}" if format_message else None
+            logger.error("服务器IP或端口未配置")
+            return None
         
         try:
             url = f"https://motd.minebbs.com/api/status?ip={self.server_ip}&port={self.server_port}&stype=je"
@@ -88,16 +123,11 @@ class MyPlugin(Star):
                             data = await response.json()
                             logger.info(f"API返回数据: {data}")  # 调试日志
                         except json.JSONDecodeError:
-                            error_msg = f"API响应JSON解析失败: {await response.text()}"
-                            logger.error(error_msg)
-                            return f"❌ {error_msg}" if format_message else None
+                            logger.error(f"API响应JSON解析失败: {await response.text()}")
+                            return None
                         
                         # 根据实际API格式提取服务器信息
                         server_status = data.get('status', '未知')
-                        
-                        # 使用配置中的服务器名称，不再从API获取
-                        server_name = self.server_name
-                            
                         version = data.get('version', '未知版本')
                         
                         # 处理玩家信息
@@ -111,55 +141,85 @@ class MyPlugin(Star):
                             max_players = 0
                             player_sample = []
                         
-                        # 如果不需要格式化消息，返回原始数据
-                        if not format_message:
-                            return {
-                                'status': server_status,
-                                'name': server_name,
-                                'version': version,
-                                'online': online_players,
-                                'max': max_players,
-                                'players': player_sample
-                            }
-                        
-                        # 构建消息
-                        status_emoji = "🟢" if server_status == "online" else "🔴"
-                        message = f"{status_emoji} 服务器: {server_name}\n"
-                        message += f"🎮 版本: {version}\n"
-                        message += f"👥 在线玩家: {online_players}/{max_players}"
-                        
-                        # 处理玩家列表
-                        if player_sample and isinstance(player_sample, list) and len(player_sample) > 0:
-                            if isinstance(player_sample[0], dict):
-                                player_names = [player.get('name', '未知玩家') for player in player_sample[:10]]
-                            else:
-                                player_names = [str(player) for player in player_sample[:10]]
-                            message += f"\n📋 玩家列表: {', '.join(player_names)}"
-                            if len(player_sample) > 10:
-                                message += f" (+{len(player_sample) - 10}人)"
-                        elif player_sample == "无" or online_players == 0:
-                            message += "\n📋 当前无玩家在线"
-                        else:
-                            message += f"\n📋 玩家列表: {player_sample}"
-                            
-                        return message
+                        return {
+                            'status': server_status,
+                            'name': self.server_name,
+                            'version': version,
+                            'online': online_players,
+                            'max': max_players,
+                            'players': player_sample
+                        }
                     else:
-                        error_msg = f"获取服务器信息失败 (状态码: {response.status})"
-                        logger.warning(error_msg)
-                        return f"❌ {error_msg}" if format_message else None
+                        logger.warning(f"获取服务器信息失败 (状态码: {response.status})")
+                        return None
                         
         except aiohttp.ClientError as e:
-            error_msg = f"网络请求失败: {e}"
-            logger.error(error_msg)
-            return f"❌ {error_msg}" if format_message else None
+            logger.error(f"网络请求失败: {e}")
+            return None
         except asyncio.TimeoutError:
-            error_msg = "请求超时"
-            logger.warning(error_msg)
-            return f"❌ {error_msg}" if format_message else None
+            logger.warning("请求超时")
+            return None
         except Exception as e:
-            error_msg = f"获取服务器信息时发生未知错误: {e}"
-            logger.error(error_msg)
-            return f"❌ {error_msg}" if format_message else None
+            logger.error(f"获取服务器信息时发生未知错误: {e}")
+            return None
+    
+    def _format_server_info(self, server_data):
+        """
+        将服务器原始数据格式化为可读消息
+        
+        Args:
+            server_data: 从_fetch_server_data获取的数据字典
+            
+        Returns:
+            str: 格式化后的消息，失败时返回错误信息
+        """
+        if server_data is None:
+            return "❌ 获取服务器数据失败"
+        
+        server_status = server_data['status']
+        server_name = server_data['name']
+        version = server_data['version']
+        online_players = server_data['online']
+        max_players = server_data['max']
+        player_sample = server_data['players']
+        
+        # 构建消息
+        status_emoji = "🟢" if server_status == "online" else "🔴"
+        message = f"{status_emoji} 服务器: {server_name}\n"
+        message += f"🎮 版本: {version}\n"
+        message += f"👥 在线玩家: {online_players}/{max_players}"
+        
+        # 处理玩家列表
+        if online_players > 0 and player_sample:
+            player_names = self._extract_player_names(player_sample)
+            if player_names:
+                display_names = player_names[:10]
+                message += f"\n📋 玩家列表: {', '.join(display_names)}"
+                if len(player_names) > 10:
+                    message += f" (+{len(player_names) - 10}人)"
+            else:
+                message += "\n📋 玩家列表: 数据获取中..."
+        else:
+            message += "\n📋 当前无玩家在线"
+        
+        return message
+
+    async def get_minecraft_server_info(self, format_message=True):
+        """
+        获取Minecraft服务器信息
+        
+        Args:
+            format_message: 是否格式化为消息字符串，False时返回原始数据字典
+            
+        Returns:
+            str或dict: 格式化的消息或原始数据字典
+        """
+        server_data = await self._fetch_server_data()
+        
+        if not format_message:
+            return server_data
+        
+        return self._format_server_info(server_data)
     
     def check_server_changes(self, server_data):
         """检查服务器状态是否有变化，返回是否需要发送消息和变化描述"""
@@ -170,16 +230,8 @@ class MyPlugin(Star):
         current_players = server_data['players']
         current_status = server_data['status']
         
-        # 获取当前玩家名单（用于比较）
-        if isinstance(current_players, list):
-            current_player_names = []
-            for player in current_players:
-                if isinstance(player, dict):
-                    current_player_names.append(player.get('name', ''))
-                else:
-                    current_player_names.append(str(player))
-        else:
-            current_player_names = []
+        # 使用统一的玩家名称提取方法
+        current_player_names = self._extract_player_names(current_players)
         
         # 检查是否是首次检查（使用 None 判断）
         if self.last_player_count is None:
@@ -196,8 +248,7 @@ class MyPlugin(Star):
         # 检查变化
         changes = []
         
-        # 检查服务器状态变化
-            # 不推送服务器上下线变化，只推送玩家变化
+        # 不推送服务器上下线变化，只推送玩家变化
         
         # 检查玩家数量变化
         player_diff = current_online - self.last_player_count
@@ -226,6 +277,7 @@ class MyPlugin(Star):
             return True, "\n".join(changes)
         else:
             return False, "无变化"
+    
     async def initialize(self):
         """插件初始化方法"""
         logger.info("Minecraft服务器监控插件已加载，使用 /start_hello 启动定时任务")
@@ -237,6 +289,11 @@ class MyPlugin(Star):
             return False
         
         try:
+            # 验证群号格式（双重保险）
+            if not self.target_group.isdigit():
+                logger.error(f"❌ 无效的群号格式: {self.target_group}")
+                return False
+            
             # 获取AIOCQHTTP客户端并发送
             platform = self.context.get_platform(PlatformAdapterType.AIOCQHTTP)
             
@@ -257,6 +314,9 @@ class MyPlugin(Star):
             else:
                 logger.warning(f"❌ 发送失败: {result}")
                 return False
+        except ValueError as e:
+            logger.error(f"❌ 群号转换失败: {self.target_group}, 错误: {e}")
+            return False
         except Exception as e:
             logger.error(f"发送通知时出错: {e}")
             return False
@@ -268,8 +328,8 @@ class MyPlugin(Star):
                 # 等待配置的检查间隔
                 await asyncio.sleep(self.check_interval)
                 
-                # 获取服务器原始数据
-                server_data = await self.get_minecraft_server_info(format_message=False)
+                # 仅获取一次服务器原始数据
+                server_data = await self._fetch_server_data()
                 
                 if server_data is None:
                     logger.warning("❌ 获取服务器数据失败，跳过本次检查")
@@ -283,8 +343,8 @@ class MyPlugin(Star):
                     # 先发送变化提醒
                     change_notification = f"🔔 服务器状态变化：\n{change_message}"
                     
-                    # 再发送完整的服务器状态
-                    full_status = await self.get_minecraft_server_info(format_message=True)
+                    # 使用已获取的数据格式化完整状态（避免第二次网络请求）
+                    full_status = self._format_server_info(server_data)
                     
                     # 获取一言句子
                     hitokoto = await self.get_hitokoto()
@@ -322,7 +382,7 @@ class MyPlugin(Star):
         
         self.task = asyncio.create_task(self.direct_hello_task())
         logger.info("启动服务器监控任务")
-        yield event.plain_result("✅ 服务器监控任务已启动，每10秒发送一次服务器状态")
+        yield event.plain_result(f"✅ 服务器监控任务已启动，每{self.check_interval}秒检查一次服务器状态")
     
     @filter.command("stop_server_monitor")
     async def stop_server_monitor_task(self, event: AstrMessageEvent):
@@ -373,14 +433,28 @@ class MyPlugin(Star):
     @filter.command("set_group")
     async def set_target_group(self, event: AstrMessageEvent, group_id: str):
         """设置目标群号"""
-        self.target_group = group_id
-        logger.info(f"设置目标群号为: {group_id}")
-        yield event.plain_result(f"目标群号已设置为: {group_id}")
+        # 验证群号是否为有效数字
+        if not group_id.strip().isdigit():
+            yield event.plain_result(f"❌ 无效的群号: '{group_id}'。请输入纯数字群号。")
+            return
+        
+        self.target_group = group_id.strip()
+        logger.info(f"设置目标群号为: {self.target_group}")
+        yield event.plain_result(f"✅ 目标群号已设置为: {self.target_group}")
 
     # 测试指令
     @filter.command("test_send")
     async def test_send(self, event: AstrMessageEvent):
         """测试发送服务器信息到目标群"""
+        if not self.target_group:
+            yield event.plain_result("❌ 目标群号未设置，请先使用 /set_group 命令设置群号")
+            return
+        
+        # 验证群号格式
+        if not self.target_group.isdigit():
+            yield event.plain_result(f"❌ 当前群号 '{self.target_group}' 格式无效，请使用 /set_group 重新设置")
+            return
+        
         try:
             # 获取服务器信息
             server_info = await self.get_minecraft_server_info()
@@ -402,8 +476,10 @@ class MyPlugin(Star):
             else:
                 yield event.plain_result(f"❌ 测试发送失败: {result}")
                 
+        except ValueError as e:
+            yield event.plain_result(f"❌ 群号格式错误: {e}")
         except Exception as e:
-            yield event.plain_result(f"测试发送出错: {e}")
+            yield event.plain_result(f"❌ 测试发送出错: {e}")
 
     async def terminate(self):
         """插件销毁方法"""
