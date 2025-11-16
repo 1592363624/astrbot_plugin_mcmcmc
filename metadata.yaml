@@ -3,6 +3,3 @@ desc: Minecraft服务器监控插件，支持定时检测服务器状态变化�
 version: v2.0 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: cryfly666 # 作者
 repo: https://github.com/cryfly666/astrbot_plugin_play # 插件的仓库地址
-
-
-

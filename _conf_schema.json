@@ -3,7 +3,7 @@
     "description": "目标QQ群号",
     "type": "string",
     "hint": "接收服务器监控消息的QQ群号",
-    "default": "666666"
+    "default": "123456789"
   },
   "server_name": {
     "description": "服务器名称",
@@ -15,13 +15,13 @@
     "description": "Minecraft服务器IP地址",
     "type": "string", 
     "hint": "要监控的Minecraft服务器IP地址或域名",
-    "default": "hello.world"
+    "default": "play.cn"
   },
   "server_port": {
     "description": "Minecraft服务器端口",
     "type": "int",
     "hint": "要监控的Minecraft服务器端口号",
-    "default": 67893
+    "default": 123456
   },
   "check_interval": {
     "description": "检查间隔（秒）",
@@ -35,5 +35,4 @@
     "hint": "插件加载时是否自动开始监控服务器状态",
     "default": false
   }
-
 }

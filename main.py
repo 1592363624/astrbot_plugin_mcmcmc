@@ -14,22 +14,30 @@ class MyPlugin(Star):
         self.config = config or {}
         self.task = None  # 用于存储定时任务
         
-        # 从配置获取参数，如果配置为空则使用默认值
-        self.target_group = str(self.config.get("target_group", "1234567"))
-        self.server_name = self.config.get("server_name", "我的Minecraft服务器")
-        self.server_ip = self.config.get("server_ip", "play.happy")
-        self.server_port = self.config.get("server_port", 12345)
+        # 从配置获取参数，不再使用具体的默认值
+        self.target_group = self.config.get("target_group")
+        self.server_name = self.config.get("server_name", "Minecraft服务器")
+        self.server_ip = self.config.get("server_ip")
+        self.server_port = self.config.get("server_port")
         self.check_interval = self.config.get("check_interval", 10)
         self.enable_auto_monitor = self.config.get("enable_auto_monitor", False)
         
         # 状态缓存，用于检测变化
-        self.last_player_count = -1  # 上次的玩家数量，-1表示初始状态
-        self.last_player_list = []   # 上次的玩家列表
-        self.last_status = None      # 上次的服务器状态
+        self.last_player_count = None  # 上次的玩家数量，None表示未初始化
+        self.last_player_list = []     # 上次的玩家列表
+        self.last_status = None        # 上次的服务器状态
         
-        logger.info(f"Minecraft监控插件已加载 - 目标群: {self.target_group}, 服务器: {self.server_ip}:{self.server_port}")
+        # 检查必要的配置是否完整
+        if not self.target_group or not self.server_ip or not self.server_port:
+            logger.error("Minecraft监控插件配置不完整，缺少 target_group、server_ip 或 server_port，自动监控功能将不会启动。")
+            logger.error("请在配置文件中设置以下参数: target_group, server_ip, server_port")
+            self.enable_auto_monitor = False
+        else:
+            # 确保 target_group 是字符串类型
+            self.target_group = str(self.target_group)
+            logger.info(f"Minecraft监控插件已加载 - 目标群: {self.target_group}, 服务器: {self.server_ip}:{self.server_port}")
         
-        # 如果启用了自动监控，延迟启动任务
+        # 如果启用了自动监控且配置完整，延迟启动任务
         if self.enable_auto_monitor:
             asyncio.create_task(self._delayed_auto_start())
     
@@ -49,22 +57,40 @@ class MyPlugin(Star):
                         text = await response.text()
                         return text.strip()
                     else:
+                        logger.warning(f"获取一言失败: HTTP {response.status}")
                         return None
+        except aiohttp.ClientError as e:
+            logger.warning(f"获取一言网络请求失败: {e}")
+            return None
+        except asyncio.TimeoutError:
+            logger.warning("获取一言请求超时")
+            return None
         except Exception as e:
-            logger.warning(f"获取一言失败: {e}")
+            logger.warning(f"获取一言时发生未知错误: {e}")
             return None
     
 
     async def get_minecraft_server_info(self, format_message=True):
         """获取Minecraft服务器信息"""
+        # 检查配置完整性
+        if not self.server_ip or not self.server_port:
+            error_msg = "服务器IP或端口未配置"
+            logger.error(error_msg)
+            return f"❌ {error_msg}" if format_message else None
+        
         try:
             url = f"https://motd.minebbs.com/api/status?ip={self.server_ip}&port={self.server_port}&stype=je"
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     if response.status == 200:
-                        data = await response.json()
-                        logger.info(f"API返回数据: {data}")  # 调试日志
+                        try:
+                            data = await response.json()
+                            logger.info(f"API返回数据: {data}")  # 调试日志
+                        except json.JSONDecodeError:
+                            error_msg = f"API响应JSON解析失败: {await response.text()}"
+                            logger.error(error_msg)
+                            return f"❌ {error_msg}" if format_message else None
                         
                         # 根据实际API格式提取服务器信息
                         server_status = data.get('status', '未知')
@@ -118,17 +144,22 @@ class MyPlugin(Star):
                             
                         return message
                     else:
-                        if format_message:
-                            return f"❌ 获取服务器信息失败 (状态码: {response.status})"
-                        else:
-                            return None
+                        error_msg = f"获取服务器信息失败 (状态码: {response.status})"
+                        logger.warning(error_msg)
+                        return f"❌ {error_msg}" if format_message else None
                         
+        except aiohttp.ClientError as e:
+            error_msg = f"网络请求失败: {e}"
+            logger.error(error_msg)
+            return f"❌ {error_msg}" if format_message else None
+        except asyncio.TimeoutError:
+            error_msg = "请求超时"
+            logger.warning(error_msg)
+            return f"❌ {error_msg}" if format_message else None
         except Exception as e:
-            logger.error(f"获取服务器信息出错: {e}")
-            if format_message:
-                return f"❌ 获取服务器信息出错: {str(e)}"
-            else:
-                return None
+            error_msg = f"获取服务器信息时发生未知错误: {e}"
+            logger.error(error_msg)
+            return f"❌ {error_msg}" if format_message else None
     
     def check_server_changes(self, server_data):
         """检查服务器状态是否有变化，返回是否需要发送消息和变化描述"""
@@ -150,8 +181,8 @@ class MyPlugin(Star):
         else:
             current_player_names = []
         
-        # 检查是否是首次检查
-        if self.last_player_count == -1:
+        # 检查是否是首次检查（使用 None 判断）
+        if self.last_player_count is None:
             # 首次检查，更新缓存但不发送消息（除非有玩家在线）
             self.last_player_count = current_online
             self.last_player_list = current_player_names.copy()
@@ -199,6 +230,37 @@ class MyPlugin(Star):
         """插件初始化方法"""
         logger.info("Minecraft服务器监控插件已加载，使用 /start_hello 启动定时任务")
     
+    async def notify_subscribers(self, message: str):
+        """发送通知到目标群组（抽象的通知函数）"""
+        if not self.target_group:
+            logger.error("❌ 目标群号未配置，无法发送通知")
+            return False
+        
+        try:
+            # 获取AIOCQHTTP客户端并发送
+            platform = self.context.get_platform(PlatformAdapterType.AIOCQHTTP)
+            
+            if not platform or not hasattr(platform, 'get_client'):
+                logger.error("❌ 无法获取AIOCQHTTP客户端")
+                return False
+                
+            client = platform.get_client()
+            
+            result = await client.api.call_action('send_group_msg', **{
+                'group_id': int(self.target_group),
+                'message': message
+            })
+            
+            if result and result.get('message_id'):
+                logger.info(f"✅ 已发送通知到群 {self.target_group}")
+                return True
+            else:
+                logger.warning(f"❌ 发送失败: {result}")
+                return False
+        except Exception as e:
+            logger.error(f"发送通知时出错: {e}")
+            return False
+    
     async def direct_hello_task(self):
         """定时获取并检测Minecraft服务器变化"""
         while True:
@@ -232,24 +294,8 @@ class MyPlugin(Star):
                     if hitokoto:
                         final_message += f"\n\n💬 {hitokoto}"
                     
-                    # 获取AIOCQHTTP客户端并发送
-                    platform = self.context.get_platform(PlatformAdapterType.AIOCQHTTP)
-                    
-                    if not platform or not hasattr(platform, 'get_client'):
-                        logger.error("❌ 无法获取AIOCQHTTP客户端")
-                        continue
-                        
-                    client = platform.get_client()
-                    
-                    result = await client.api.call_action('send_group_msg', **{
-                        'group_id': int(self.target_group),
-                        'message': final_message
-                    })
-                    
-                    if result and result.get('message_id'):
-                        logger.info(f"✅ 检测到变化，已发送通知到群 {self.target_group}")
-                    else:
-                        logger.warning(f"❌ 发送失败: {result}")
+                    # 使用抽象的通知函数发送消息
+                    await self.notify_subscribers(final_message)
                 else:
                     # 无变化，仅记录日志
                     logger.info(f"🔍 服务器状态无变化: 玩家数 {server_data['online']}/{server_data['max']}")
@@ -303,28 +349,26 @@ class MyPlugin(Star):
     @filter.command("reset_monitor")
     async def reset_monitor(self, event: AstrMessageEvent):
         """重置监控状态缓存"""
-        self.last_player_count = -1
+        self.last_player_count = None
         self.last_player_list = []
         self.last_status = None
         logger.info("监控状态缓存已重置")
         yield event.plain_result("✅ 监控状态缓存已重置，下次检测将视为首次检测")
     
-    # 保留旧指令以兼容
+    # 保留旧指令以兼容（作为代理）
     @filter.command("start_hello")
     async def start_hello_task(self, event: AstrMessageEvent):
         """启动定时发送任务（兼容旧版）"""
-        await self.start_server_monitor_task(event)
+        # 直接代理到新方法，正确处理异步生成器
+        async for result in self.start_server_monitor_task(event):
+            yield result
     
     @filter.command("stop_hello")
     async def stop_hello_task(self, event: AstrMessageEvent):
         """停止定时发送任务（兼容旧版）"""
-        await self.stop_server_monitor_task(event)
-        if self.task and not self.task.done():
-            self.task.cancel()
-            logger.info("停止定时发送任务")
-            yield event.plain_result("定时发送任务已停止")
-        else:
-            yield event.plain_result("定时任务未在运行")
+        # 直接代理到新方法，正确处理异步生成器
+        async for result in self.stop_server_monitor_task(event):
+            yield result
     
     @filter.command("set_group")
     async def set_target_group(self, event: AstrMessageEvent, group_id: str):
@@ -366,5 +410,4 @@ class MyPlugin(Star):
         # 停止定时任务
         if self.task and not self.task.done():
             self.task.cancel()
-
             logger.info("定时发送任务已停止")
