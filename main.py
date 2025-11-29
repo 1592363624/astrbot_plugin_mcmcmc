@@ -76,30 +76,33 @@ class MyPlugin(Star):
         except Exception as e:
             logger.warning(f"获取一言时发生未知错误: {e}")
             return None
-    
+
     def _extract_player_names(self, player_sample):
         """
         从player_sample中提取玩家名称列表
-        
-        Args:
-            player_sample: API返回的玩家样本数据，可能是列表或其他类型
-            
-        Returns:
-            list: 玩家名称列表
+        兼容：列表 / 字典列表 / 字符串
         """
-        if not isinstance(player_sample, list):
+        if not player_sample:
             return []
-        
-        player_names = []
-        for player in player_sample:
-            if isinstance(player, dict):
-                name = player.get('name', '未知玩家')
-                if name:  # 确保名称不为空
-                    player_names.append(name)
-            elif player:  # 确保不是空字符串或None
-                player_names.append(str(player))
-        
-        return player_names
+
+        # 情况1：API 返回字符串 "A, B, C"
+        if isinstance(player_sample, str):
+            return [name.strip() for name in player_sample.split(",") if name.strip()]
+
+        # 情况2：API 返回列表
+        if isinstance(player_sample, list):
+            names = []
+            for p in player_sample:
+                if isinstance(p, dict):
+                    name = p.get("name") or p.get("username") or p.get("name_clean") or p.get("playername")
+                    if name:
+                        names.append(name)
+                else:
+                    names.append(str(p))
+            return names
+
+        # 其他情况（不认识的格式）
+        return []
 
     async def _fetch_server_data(self):
         """
@@ -135,7 +138,11 @@ class MyPlugin(Star):
                         if isinstance(players_info, dict):
                             online_players = players_info.get('online', 0)
                             max_players = players_info.get('max', 0)
-                            player_sample = players_info.get('sample', [])
+                            player_sample = players_info.get('sample')
+                            if not player_sample:
+                                # minebbs 实际返回字段
+                                player_sample = players_info.get('list', [])
+
                         else:
                             online_players = 0
                             max_players = 0
