@@ -23,6 +23,12 @@
     "hint": "要监控的Minecraft服务器端口号",
     "default": 123456
   },
+  "server_type": {
+    "description": "服务器类型",
+    "type": "string",
+    "hint": "服务器类型：java (Java版) 或 be (基岩版)",
+    "default": "be"
+  },
   "check_interval": {
     "description": "检查间隔（秒）",
     "type": "int",
