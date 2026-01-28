@@ -266,15 +266,6 @@ class MyPlugin(Star):
                 message += f"\n📋 玩家列表: {', '.join(display_names)}"
                 if len(player_names) > 10:
                     message += f" (+{len(player_names) - 10}人)"
-            else:
-                # 如果有玩家在线但无法获取列表，显示提示信息
-                message += f"\n📋 当前有 {online_players} 名玩家在线"
-        else:
-            message += "\n📋 当前无玩家在线"
-        
-        # 添加服务器类型标识
-        server_type_display = "基岩版" if self.server_type == "be" else "Java版"
-        message += f"\n🔧 服务器类型: {server_type_display}"
         
         return message
 
@@ -399,14 +390,12 @@ class MyPlugin(Star):
         """定时获取并检测Minecraft服务器变化"""
         while True:
             try:
-                # 等待配置的检查间隔
-                await asyncio.sleep(self.check_interval)
-                
                 # 仅获取一次服务器原始数据
                 server_data = await self._fetch_server_data()
                 
                 if server_data is None:
                     logger.warning("❌ 获取服务器数据失败，跳过本次检查")
+                    await asyncio.sleep(self.check_interval)
                     continue
                 
                 # 检查是否有变化
@@ -433,6 +422,9 @@ class MyPlugin(Star):
                 else:
                     # 无变化，仅记录日志
                     logger.info(f"🔍 服务器状态无变化: 玩家数 {server_data['online']}/{server_data['max']}")
+                
+                # 等待配置的检查间隔
+                await asyncio.sleep(self.check_interval)
                     
             except Exception as e:
                 logger.error(f"定时监控任务出错: {e}")

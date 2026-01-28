@@ -27,8 +27,6 @@
 | `check_interval` | 监控检查间隔（秒） | 数字 | 10 | ❌ |
 | `enable_auto_monitor` | 插件加载时自动启动监控 | 布尔值 | false | ❌ |
 
-⚠️ **重要提示**：`target_group`、`server_ip`、`server_port` 为必填项，如果缺少这些配置，自动监控功能将不会启动。
-
 ## 可用指令
 
 ### 监控控制指令
@@ -108,6 +106,7 @@ data/plugins/服务器查询/
 - **server_ip**: Minecraft服务器IP
 - **server_port**: 服务器端口（Java版默认25565）
 - **server_name**: 自定义服务器名称（可选）
+- **server_type**: 服务器版本(⚠️ :java版为je，基岩版为be)
 - **check_interval**: 检查间隔，建议10-60秒
 - **enable_auto_monitor**: 是否自动启动监控
 
