@@ -330,6 +330,10 @@ class MyPlugin(Star):
     async def cmd_stop(self, event: AstrMessageEvent):
         if self.task:
             self.task.cancel()
+            try:
+                await self.task
+            except asyncio.CancelledError:
+                pass
             self.task = None
         yield event.plain_result("🛑 监控已停止")
 

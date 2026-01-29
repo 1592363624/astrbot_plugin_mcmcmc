@@ -25,7 +25,7 @@
 | `target_group` | QQ群号 | 字符串/数字 | 无 | ✅ |
 | `server_name` | 服务器名称 | 字符串 | "Minecraft服务器" | ❌ |
 | `server_ip` | 服务器IP地址 | 字符串 | 无 | ✅ |
-| `server_port` | 服务器端口 | 数字 | 25565 | ✅ |
+| `server_port` | 服务器端口 | 数字 | 25565 | ❌ |
 | `check_interval` | 监控检查间隔（秒） | 数字 | 10 | ❌ |
 | `enable_auto_monitor` | 插件加载时自动启动监控 | 布尔值 | false | ❌ |
 
