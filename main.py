@@ -306,8 +306,6 @@ class MyPlugin(Star):
                             
                             logger.info(f"准备发送变动通知消息，长度: {len(notify_msg)} 字符")
                             await self.send_group_msg(notify_msg)
-                        else:
-                            logger.debug(f"未检测到变化 - 在线: {curr_online}人")
                         
                         # Log status after each query cycle
                         logger.info(f"自动查询完成 - 在线: {curr_online}人, 状态: 正常")
