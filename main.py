@@ -236,9 +236,9 @@ class MyPlugin(Star):
             p_str = ", ".join(names[:10])
             if len(names) > 10:
                 p_str += f" 等{len(names)}人"
-            msg.append(f" 玩家列表: {p_str}")
+            msg.append(f"📋 玩家列表: {p_str}")
         else:
-            msg.append(" 玩家列表")
+            msg.append("📋 玩家列表")
             
         return "\n".join(msg)
 
@@ -365,3 +365,4 @@ class MyPlugin(Star):
                 await self.task
             except asyncio.CancelledError:
                 pass
+
