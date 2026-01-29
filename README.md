@@ -13,6 +13,7 @@
 - ⚙️ **灵活配置**: 支持通过WebUI配置目标群、服务器地址、检查间隔等
 - 🚀 **自动启动**: 可配置插件加载时自动启动监控（延迟5秒启动）
 - 💬 **一言集成**: 消息推送时附带一言句子，更有趣味性
+- 🔌 **零依赖**: 使用原生Socket协议直接与服务器通信，无需外部API或服务端插件
 
 ## 配置选项
 
@@ -81,9 +82,10 @@
 ## 技术特性
 
 - **异步架构**: 基于 `asyncio` 和 `aiohttp`，性能优异
-- **API集成**: 使用 MineBBS MOTD API (`https://motd.minebbs.com/api/status`) 获取服务器状态
+- **直接连接**: 使用Minecraft Server List Ping协议直接与服务器通信，无需外部API
+- **零依赖**: 无需在服务端安装插件或配置RCON，适用于原版及大多数服务端（Spigot, Paper, Fabric, Forge等）
 - **直接推送**: 通过 AIOCQHTTP 客户端的 `send_group_msg` 接口直接发送群消息
-- **错误处理**: 完整的异常处理和超时机制（API请求超时10秒）
+- **错误处理**: 完整的异常处理和超时机制（连接超时5秒）
 - **日志系统**: 详细的日志记录，便于调试和监控
 - **状态管理**: 智能的状态缓存机制，避免重复通知
 
@@ -120,24 +122,12 @@ data/plugins/服务器查询/
 
 ## API说明
 
-### MineBBS MOTD API
-**请求URL**: `https://motd.minebbs.com/api/status?ip={ip}&port={port}&stype=je`
+### Minecraft Server List Ping 协议
+插件使用 Minecraft Server List Ping 协议直接与服务器通信，无需依赖外部API。该协议是Minecraft官方协议，适用于大多数Java版和基岩版服务器。
 
-**返回数据格式**:
-```json
-{
-  "status": "online",
-  "version": "1.20.1",
-  "players": {
-    "online": 2,
-    "max": 20,
-    "sample": [
-      {"name": "Player1"},
-      {"name": "Player2"}
-    ]
-  }
-}
-```
+**数据格式**:
+- 通过Socket连接直接发送握手包和状态请求包
+- 服务器返回JSON格式的状态信息，包含版本、玩家数量、玩家列表等
 
 ### 一言API
 **请求URL**: `https://v1.hitokoto.cn/?encode=text`
@@ -146,9 +136,10 @@ data/plugins/服务器查询/
 
 ## 注意事项
 
-- ⚠️ 插件需要网络连接以访问外部API
+- ⚠️ 插件使用原生Socket协议与Minecraft服务器通信，确保服务器端口可访问
 - ⚠️ 确保配置的QQ群号正确且机器人已加入该群
-- ⚠️ 建议检查间隔不要设置过短，避免频繁API请求
+- ⚠️ 建议检查间隔不要设置过短，避免频繁查询服务器
+- ⚠️ 确保服务器防火墙放行了对应端口
 
 ## 常见问题
 
@@ -163,4 +154,10 @@ A: 使用 `/查询` 测试，检查群号是否正确，机器人是否有发送
 
 **Q: 如何更改监控的群？**  
 A: 使用 `/set_group <群号>` 指令动态修改，或在WebUI配置页面修改。
+
+**Q: 需要在 MC 服务器安装插件吗？**  
+A: 不需要。本插件通过 Minecraft Server List Ping 协议直接查询，适用于原版及大多数服务端（Spigot, Paper, Fabric, Forge 等）。
+
+**Q: 报错 "Connection refused"？**  
+A: 请检查 `server_ip` 和 `server_port` 是否正确，并确保服务器防火墙放行了对应端口。
 
