@@ -108,8 +108,14 @@ class MyPlugin(Star):
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(host, port), timeout=10.0
             )
+        except asyncio.TimeoutError:
+            logger.warning(f"服务器Ping失败: {host}:{port} - 连接超时(10秒)")
+            return None
+        except ConnectionRefusedError:
+            logger.warning(f"服务器Ping失败: {host}:{port} - 连接被拒绝(服务器可能未运行)")
+            return None
         except Exception as e:
-            logger.debug(f"无法连接到服务器 {host}:{port} - {e}")
+            logger.warning(f"服务器Ping失败: {host}:{port} - {type(e).__name__}: {e}")
             return None
 
         try:
@@ -147,8 +153,14 @@ class MyPlugin(Star):
 
             return await asyncio.wait_for(read_response(), timeout=10.0)
 
+        except asyncio.TimeoutError:
+            logger.warning(f"服务器Ping失败: {host}:{port} - 读取响应超时(10秒)")
+            return None
+        except json.JSONDecodeError as e:
+            logger.warning(f"服务器Ping失败: {host}:{port} - JSON解析错误: {e}")
+            return None
         except Exception as e:
-            logger.warning(f"服务器Ping失败: {e}")
+            logger.warning(f"服务器Ping失败: {host}:{port} - {type(e).__name__}: {e}")
             return None
         finally:
             writer.close()
@@ -284,7 +296,7 @@ class MyPlugin(Star):
                             changes.append(f"{symbol} 在线人数变化: {diff:+d} (当前 {curr_online}人)")
 
                         if changes:
-                            logger.info(f"检测到变化: {changes}")
+                            logger.info(f"🔔 检测到变化: {changes}")
                             # 构建完整消息
                             notify_msg = "🔔 状态变动:\n" + "\n".join(changes)
                             notify_msg += f"\n\n{self._format_msg(data)}"
@@ -292,7 +304,10 @@ class MyPlugin(Star):
                             hito = await self.get_hitokoto()
                             if hito: notify_msg += f"\n\n💬 {hito}"
                             
+                            logger.info(f"准备发送变动通知消息，长度: {len(notify_msg)} 字符")
                             await self.send_group_msg(notify_msg)
+                        else:
+                            logger.debug(f"未检测到变化 - 在线: {curr_online}人")
                         
                         # Log status after each query cycle
                         logger.info(f"自动查询完成 - 在线: {curr_online}人, 状态: 正常")
@@ -321,6 +336,7 @@ class MyPlugin(Star):
 
     async def send_group_msg(self, text):
         if not self.target_group:
+            logger.warning("消息发送失败: target_group 未配置")
             return
         try:
             # Use modern AstrBot API to send messages
@@ -330,9 +346,13 @@ class MyPlugin(Star):
             session = f"aiocqhttp:GroupMessage:{self.target_group}"
             message_chain = MessageChain()
             message_chain.chain.append(Plain(text=text))
+            logger.info(f"正在发送消息到群 {self.target_group}")
             await self.context.send_message(session, message_chain)
+            logger.info(f"✅ 消息已发送到群 {self.target_group}")
         except Exception as e:
-            logger.error(f"消息发送失败: {e}")
+            logger.error(f"❌ 消息发送失败到群 {self.target_group}: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"详细错误信息:\n{traceback.format_exc()}")
 
     # --- 指令区域 ---
 
