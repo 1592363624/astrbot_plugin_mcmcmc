@@ -8,7 +8,6 @@ import json
 import struct
 import traceback
 
-@register("minecraft_monitor", "YourName", "Minecraft服务器监控插件", "2.0.0")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
