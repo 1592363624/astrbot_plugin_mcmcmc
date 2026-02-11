@@ -29,6 +29,7 @@ class MyPlugin(Star):
         # 缓存数据
         self.last_player_count = None
         self.last_player_list = []
+        self.tolerance_count = 0  # 用于处理人数变化但名单未同步的抖动
         
         if not self.target_group or not self.server_ip or not self.server_port:
             logger.error("配置不完整(target_group/ip/port)，监控无法启动")
@@ -289,6 +290,8 @@ class MyPlugin(Star):
                         joined = curr_players - last_players
                         left = last_players - curr_players
                         
+                        should_update_cache = True
+
                         if joined:
                             changes.append(f"📈 {', '.join(joined)} 加入了服务器")
                         if left:
@@ -296,9 +299,19 @@ class MyPlugin(Star):
                             
                         # 如果只有数量变化但获取不到具体名单（部分服务端特性）
                         if not joined and not left and curr_online != self.last_player_count:
-                            diff = curr_online - self.last_player_count
-                            symbol = "📈" if diff > 0 else "📉"
-                            changes.append(f"{symbol} 在线人数变化: {diff:+d} (当前 {curr_online}人)")
+                            # 针对 "人数变了但名单没变" 的情况，增加一次容忍度，防止因为服务器数据不同步导致的误报
+                            if self.tolerance_count < 1:
+                                self.tolerance_count += 1
+                                logger.debug(f"检测到在线人数变化({self.last_player_count}->{curr_online})但名单未变，暂缓更新等待同步")
+                                should_update_cache = False
+                            else:
+                                diff = curr_online - self.last_player_count
+                                symbol = "📈" if diff > 0 else "📉"
+                                changes.append(f"{symbol} 在线人数变化: {diff:+d} (当前 {curr_online}人)")
+                                self.tolerance_count = 0
+                        else:
+                            # 如果有名单变化，或者人数也没变，重置容忍计数
+                            self.tolerance_count = 0
 
                         if changes:
                             logger.info(f"🔔 检测到变化: {changes}")
@@ -316,8 +329,9 @@ class MyPlugin(Star):
                         logger.info(f"自动查询完成 - 在线: {curr_online}人, 状态: 正常")
                         
                         # 更新缓存
-                        self.last_player_count = curr_online
-                        self.last_player_list = curr_players
+                        if should_update_cache:
+                            self.last_player_count = curr_online
+                            self.last_player_list = curr_players
                 
                 elif data is None:
                     # 获取失败时暂不处理，避免断网刷屏，仅日志
@@ -404,6 +418,7 @@ class MyPlugin(Star):
     async def cmd_reset(self, event: AstrMessageEvent):
         self.last_player_count = None
         self.last_player_list = []
+        self.tolerance_count = 0
         yield event.plain_result("🔄 缓存已重置，下次检测将视为首次")
 
     @filter.command("set_group")
