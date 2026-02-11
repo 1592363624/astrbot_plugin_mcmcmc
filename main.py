@@ -63,7 +63,13 @@ class MyPlugin(Star):
         
         # 标准格式：列表包含字典 [{"name": "player1"}, ...]
         if isinstance(players_data, list):
-            return [p.get("name", str(p)) if isinstance(p, dict) else str(p) for p in players_data]
+            result = []
+            for p in players_data:
+                name = p.get("name", str(p)) if isinstance(p, dict) else str(p)
+                # 过滤掉 Anonymous Player (通常是服务器未完全识别玩家时的占位符)
+                if name and name != "Anonymous Player":
+                    result.append(name)
+            return result
         
         return []
 
