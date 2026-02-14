@@ -326,7 +326,8 @@ class MyPlugin(Star):
                             await self.send_group_msg(notify_msg)
                         
                         # Log status after each query cycle
-                        logger.info(f"自动查询完成 - 在线: {curr_online}人, 状态: 正常")
+                        player_list_str = ", ".join(sorted(curr_players)) if curr_players else "无"
+                        logger.info(f"自动查询完成 - 在线: {curr_online}人 ({player_list_str}), 状态: 正常")
                         
                         # 更新缓存
                         if should_update_cache:
